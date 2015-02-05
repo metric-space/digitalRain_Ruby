@@ -7,9 +7,9 @@ Curses.init_screen
 height     = Curses.lines
 width      = Curses.cols
 win        = Curses::Window.new(height,width,0,0)
-MaxLength  = height.to_i/3
+MaxLength  = height.to_i/2
 MinLength  = height.to_i/6
-
+Sleep_time = 1.0/7.0
 # ---- log file stuff ------------------------
 
 log = File.open("log.txt","w")
@@ -49,24 +49,33 @@ end
 
 $garb       = 0
 
-10.times do
+40.times do
 	Thread.new do
 		i = 1
 		s = rand(width)
-		e = Falling.new(('a'..'z').to_a.shuffle.pop,s,i)
-		incr = rand(1..3)
+		e = Falling.new(('a'..'z').to_a.shuffle.pop,s,rand(i..height))
+		incr = rand(1..5)
 		begin
 			while 1
 				e.cleanst.each {|x| win.setpos(x.y,x.x);win.addstr(x.piece);}
 				win.refresh
-				sleep(1)
+				sleep(Sleep_time)
 
 				#----sweep-----
-				lastPiece = e.pieceArray.last
-				win.setpos(lastPiece.y,lastPiece.x)
-				win.addstr(" ")
+				e.pieceArray.last(incr).each do |x|
+					win.setpos(x.y,x.x)
+					win.addstr(" ")
+				end
 				win.refresh
-				e.pieceArray.each {|x|  x.y = (x.y + incr)%(height-1)}
+				e.pieceArray.each do |x| 
+				       	x.y = (x.y + incr)
+					if x.y > height-1
+						if e.pieceArray.index(x) == 0
+							incr = rand(1..5)  
+						end
+						x.y=x.y%(height-1)  
+					end
+				end
 				if $garb != 0 then break end
 			end
 			rescue StandardError=>e
