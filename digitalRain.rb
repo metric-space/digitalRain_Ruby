@@ -1,70 +1,78 @@
 require 'curses'
+require 'agent'
+require './helperFunctions'
 
 Curses.noecho
 Curses.init_screen
 
 
-height     = Curses.lines
-width      = Curses.cols
-win        = Curses::Window.new(height,width,0,0)
-MaxLength  = height.to_i/2
-MinLength  = height.to_i/6
+$height    = Curses.lines
+$width     = Curses.cols
+$win       = Curses::Window.new($height,$width,0,0)
+MaxLength  = $height.to_i/2
+MinLength  = $height.to_i/6
 Sleep_time = 1.0/7.0
-# ---- log file stuff ------------------------
 
 log = File.open("log.txt","w")
 
+$signalToKillEverything  = 0
+$globalChannel =  Agent::channel!(Integer);
 
-# =======  falling function ==================
 
-def genRandomCharacter  
-	rand(97..122).chr 
-end
-	
-
-def fallingPieceGenerator(x,y)
-	stringLength = rand(MinLength..MaxLength)
-
-	(0..stringLength)
-	 .to_a
- 	 .map { genRandomCharacter }
-	 .zip([x].cycle(stringLength+1),
-	      [y].cycle(stringLength+1)
-	         .map.with_index{|x,i| x-i }
-	     )
-         .map {|x| {piece: x[0], x: x[1], y: x[2]}}
+def refreshAndSleep
+    $win.refresh
+    sleep(Sleep_time)
 end
 
+def makeRainDrop
+    Agent::go! do
+        e = Helper.fallingPieceGenerator(rand($width),rand(1..$height),MinLength,MaxLength)
+        incr = rand(1..5)
+	begin
+            while 1
+		e.select {|x| x[:y] >= 0 && x[:y] <= $height}
+		 .each {|x| 
+			 $win.setpos(x[:y],x[:x]);
+			 $win.addstr(x[:piece]);
+		 }
+		refreshAndSleep	
+		e.each {|x| 
+		    $win.setpos(x[:y],x[:x]);
+		    $win.addstr(" ");
+		    x[:y]+=incr;	
+		}
+		if (e.first[:y] > $height) then 
+		    log.puts "droplet died"
+		    $globalChannel << 1;
+		    break
+		end
+		if ($signalToKillEverything != 0) then break end
+	    end
+	rescue StandardError=>e
+	    log.puts "error #{e}"
+ 	end
+    end
+end
 
-$garb       = 0
 
 40.times do
-	Thread.new do
-		e = fallingPieceGenerator(rand(width),rand(1..height))
-		incr = rand(1..5)
-		begin
-			while 1
-				# draw string
-				e.each {|x| (win.setpos(x[:y],x[:x]) && win.addstr(x[:piece])) if x[:y] != 0;}
-				win.refresh
-				sleep(Sleep_time)
-				e.each {|x| x[:y]+=incr;win.setpos(x[:y],x[:x]);win.addstr(" ");}
-				win.refresh
-				sleep(Sleep_time)
-
-				#----sweep-----
-				if $garb != 0 then break end
-			end
-			rescue StandardError=>e
-					log.puts " Something weird happend and it killed the thread"
-					log.puts "error #{e}"
-		end
-		Thread.kill
-	end
-
+        makeRainDrop
 end
-win.getch
-$garb = 1
-win.close
+
+# master routine
+Agent::go! do
+    while 1
+         if(rand(0..5) == 1) then
+             log.puts "new droplet created"
+             makeRainDrop
+         end
+	 sleep(Sleep_time)
+    end
+end
+
+
+$win.getch
+$signalToKillEverything = 1
+$win.close
 log.puts("closed the normal way")
 log.close
